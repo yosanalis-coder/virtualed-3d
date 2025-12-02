@@ -33,7 +33,7 @@ import {
 } from 'lucide-react';
 
 // ==========================================
-// TUS DATOS REALES
+// TUS DATOS REALES (Ya configurados)
 // ==========================================
 const firebaseConfig = {
   apiKey: "AIzaSyC9-3BJ9LOUaVIRCKGx4GJazxe6p5jnVy8",
@@ -56,12 +56,14 @@ try {
   console.error("Error inicializando Firebase:", e);
 }
 
+// CAMBIO IMPORTANTE: Nueva colección para limpiar los "robots" viejos
 const appId = 'virtualed-mes-app';
+const COLLECTION_NAME = 'student_projects_clean_v1';
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [projects, setProjects] = useState([]);
-  const [localUploads, setLocalUploads] = useState({}); // Memoria temporal para visualización inmediata
+  const [localUploads, setLocalUploads] = useState({}); 
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
@@ -87,10 +89,10 @@ export default function App() {
     } catch (e) { console.error(e); }
   }, []);
 
-  // Leer datos (Usamos v12)
+  // Leer datos (Usamos la nueva colección limpia)
   useEffect(() => {
     if (!user || !db) return;
-    const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'student_projects_v12'), orderBy('timestamp', 'desc'));
+    const q = query(collection(db, 'artifacts', appId, 'public', 'data', COLLECTION_NAME), orderBy('timestamp', 'desc'));
     return onSnapshot(q, (snap) => {
       setProjects(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       setLoading(false);
@@ -100,7 +102,7 @@ export default function App() {
   const handleVote = async (e, project) => {
     e.stopPropagation();
     if (!user || !db) return;
-    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'student_projects_v12', project.id), { votes: increment(1) });
+    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', COLLECTION_NAME, project.id), { votes: increment(1) });
   };
 
   // --- SUBIDA INTELIGENTE ---
@@ -132,7 +134,7 @@ export default function App() {
       const publicUrl = await getDownloadURL(fileRef);
 
       // 3. Guardar en Base de Datos
-      const docRef = await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'student_projects_v12'), {
+      const docRef = await addDoc(collection(db, 'artifacts', appId, 'public', 'data', COLLECTION_NAME), {
         title, 
         studentName: student, 
         votes: 0, 
@@ -141,7 +143,7 @@ export default function App() {
         timestamp: new Date().toISOString()
       });
 
-      // 4. Guardar referencia local (Truco para que el uploader lo vea sin errores CORS)
+      // 4. Guardar referencia local
       setLocalUploads(prev => ({ ...prev, [docRef.id]: blobUrl }));
 
       setIsUploadModalOpen(false); 
@@ -153,9 +155,7 @@ export default function App() {
     setUploading(false);
   };
 
-  // Helper para decidir qué URL mostrar (Local vs Nube)
   const getProjectModelUrl = (project) => {
-    // Si tenemos una versión local (recién subida), úsala. Si no, usa la de la nube.
     return localUploads[project.id] || project.modelUrl;
   };
 
@@ -195,7 +195,6 @@ export default function App() {
             {projects.map(p => (
               <div key={p.id} onClick={() => setSelectedProject(p)} className="bg-white rounded-xl overflow-hidden shadow-md cursor-pointer group hover:ring-2 ring-[#10b981]">
                 <div className="h-64 bg-[#111827] relative">
-                  {/* AQUÍ ESTÁ EL CAMBIO: Usamos el helper getProjectModelUrl */}
                   <ModelViewerComponent src={getProjectModelUrl(p)} alt={p.title} />
                   <div className="absolute bottom-0 w-full p-4 bg-gradient-to-t from-black/90 to-transparent pt-12">
                      <h3 className="text-white font-bold">{p.title}</h3>
@@ -234,7 +233,6 @@ export default function App() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black">
            <button onClick={() => setSelectedProject(null)} className="absolute top-6 right-6 z-20 bg-white/20 text-white p-2 rounded-full"><X className="w-6 h-6" /></button>
            <div className="w-full h-full relative bg-[#0b0f19]">
-              {/* AQUÍ TAMBIÉN USAMOS EL HELPER */}
               <ModelViewerComponent src={getProjectModelUrl(selectedProject)} alt={selectedProject.title} />
               <div className="absolute top-0 left-0 p-8 pointer-events-none w-full bg-gradient-to-b from-black/80 to-transparent">
                  <h2 className="text-white font-bold text-3xl">{selectedProject.title}</h2>
