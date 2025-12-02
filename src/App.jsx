@@ -56,9 +56,12 @@ try {
   console.error("Error inicializando Firebase:", e);
 }
 
-// CAMBIO IMPORTANTE: Nueva colección para limpiar los "robots" viejos
+// ==========================================
+// CONFIGURACIÓN DE LA COMPETENCIA
+// ==========================================
 const appId = 'virtualed-mes-app';
-const COLLECTION_NAME = 'student_projects_clean_v1';
+// Al cambiar este nombre, empezamos una lista nueva y vacía.
+const COLLECTION_NAME = 'competencia_final_oficial'; 
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -125,7 +128,7 @@ export default function App() {
     }
 
     try {
-      // 1. Crear URL local inmediata (para que TÚ lo veas al instante)
+      // 1. Crear URL local inmediata
       const blobUrl = URL.createObjectURL(file);
 
       // 2. Subir a la Nube Real
