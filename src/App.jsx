@@ -12,7 +12,6 @@ import {
   query, 
   orderBy 
 } from 'firebase/firestore';
-// --- IMPORTANTE: Aquí importamos las herramientas para usar tu Storage ---
 import { 
   getStorage, 
   ref, 
@@ -20,6 +19,7 @@ import {
   getDownloadURL 
 } from 'firebase/storage';
 import { 
+  Rotate3d, 
   Heart, 
   Upload, 
   X, 
@@ -33,13 +33,13 @@ import {
 } from 'lucide-react';
 
 // ==========================================
-// TUS DATOS REALES (Ya configurados)
+// TUS DATOS REALES
 // ==========================================
 const firebaseConfig = {
   apiKey: "AIzaSyC9-3BJ9LOUaVIRCKGx4GJazxe6p5jnVy8",
   authDomain: "virtualed-3d.firebaseapp.com",
   projectId: "virtualed-3d",
-  storageBucket: "virtualed-3d.firebasestorage.app", // Tu bucket de Storage
+  storageBucket: "virtualed-3d.firebasestorage.app",
   messagingSenderId: "532276598760",
   appId: "1:532276598760:web:d4c57ee41c8b16719cf65d",
   measurementId: "G-RXZ2PCZ59E"
@@ -51,7 +51,7 @@ try {
   const app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
-  storage = getStorage(app); // <-- Aquí conectamos con el Storage que creaste
+  storage = getStorage(app);
 } catch (e) {
   console.error("Error inicializando Firebase:", e);
 }
@@ -61,6 +61,7 @@ const appId = 'virtualed-mes-app';
 export default function App() {
   const [user, setUser] = useState(null);
   const [projects, setProjects] = useState([]);
+  const [localUploads, setLocalUploads] = useState({}); // Memoria temporal para visualización inmediata
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
@@ -86,7 +87,7 @@ export default function App() {
     } catch (e) { console.error(e); }
   }, []);
 
-  // Leer datos (Usamos v12 para empezar limpio en el Storage nuevo)
+  // Leer datos (Usamos v12)
   useEffect(() => {
     if (!user || !db) return;
     const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'student_projects_v12'), orderBy('timestamp', 'desc'));
@@ -96,18 +97,16 @@ export default function App() {
     });
   }, [user]);
 
-  // Votar
   const handleVote = async (e, project) => {
     e.stopPropagation();
     if (!user || !db) return;
     await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'student_projects_v12', project.id), { votes: increment(1) });
   };
 
-  // --- AQUÍ ESTÁ EL CAMBIO CLAVE PARA USAR STORAGE ---
+  // --- SUBIDA INTELIGENTE ---
   const handleUpload = async (e) => {
     e.preventDefault();
-    // Verificamos que el storage esté conectado
-    if (!db || !storage) { alert("Error: No conecta con el Storage"); return; }
+    if (!db || !storage) { alert("Error de conexión"); return; }
     
     setUploading(true);
     setUploadError(null);
@@ -124,33 +123,40 @@ export default function App() {
     }
 
     try {
-      // 1. SUBIR AL STORAGE REAL (Lo que faltaba)
-      // Creamos una dirección única para el archivo
+      // 1. Crear URL local inmediata (para que TÚ lo veas al instante)
+      const blobUrl = URL.createObjectURL(file);
+
+      // 2. Subir a la Nube Real
       const fileRef = ref(storage, `proyectos_finales/${Date.now()}_${file.name}`);
-      
-      // Subimos los bytes
       await uploadBytes(fileRef, file);
-      
-      // Obtenemos el link de internet permanente
       const publicUrl = await getDownloadURL(fileRef);
 
-      // 2. GUARDAR ESE LINK EN LA BASE DE DATOS
-      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'student_projects_v12'), {
+      // 3. Guardar en Base de Datos
+      const docRef = await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'student_projects_v12'), {
         title, 
         studentName: student, 
         votes: 0, 
-        modelUrl: publicUrl, // <-- Ahora guardamos el link de Storage, no un link local
+        modelUrl: publicUrl, // Link para el mundo
         fileName: file.name, 
         timestamp: new Date().toISOString()
       });
+
+      // 4. Guardar referencia local (Truco para que el uploader lo vea sin errores CORS)
+      setLocalUploads(prev => ({ ...prev, [docRef.id]: blobUrl }));
 
       setIsUploadModalOpen(false); 
       form.reset();
     } catch (e) { 
       console.error(e); 
-      setUploadError("Error al subir. Revisa las reglas de Storage en Firebase."); 
+      setUploadError("Error al subir. Intenta de nuevo."); 
     }
     setUploading(false);
+  };
+
+  // Helper para decidir qué URL mostrar (Local vs Nube)
+  const getProjectModelUrl = (project) => {
+    // Si tenemos una versión local (recién subida), úsala. Si no, usa la de la nube.
+    return localUploads[project.id] || project.modelUrl;
   };
 
   const ModelViewerComponent = ({ src, alt }) => (
@@ -189,7 +195,8 @@ export default function App() {
             {projects.map(p => (
               <div key={p.id} onClick={() => setSelectedProject(p)} className="bg-white rounded-xl overflow-hidden shadow-md cursor-pointer group hover:ring-2 ring-[#10b981]">
                 <div className="h-64 bg-[#111827] relative">
-                  <ModelViewerComponent src={p.modelUrl} alt={p.title} />
+                  {/* AQUÍ ESTÁ EL CAMBIO: Usamos el helper getProjectModelUrl */}
+                  <ModelViewerComponent src={getProjectModelUrl(p)} alt={p.title} />
                   <div className="absolute bottom-0 w-full p-4 bg-gradient-to-t from-black/90 to-transparent pt-12">
                      <h3 className="text-white font-bold">{p.title}</h3>
                      <p className="text-gray-300 text-xs">{p.studentName}</p>
@@ -227,7 +234,8 @@ export default function App() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black">
            <button onClick={() => setSelectedProject(null)} className="absolute top-6 right-6 z-20 bg-white/20 text-white p-2 rounded-full"><X className="w-6 h-6" /></button>
            <div className="w-full h-full relative bg-[#0b0f19]">
-              <ModelViewerComponent src={selectedProject.modelUrl} alt={selectedProject.title} />
+              {/* AQUÍ TAMBIÉN USAMOS EL HELPER */}
+              <ModelViewerComponent src={getProjectModelUrl(selectedProject)} alt={selectedProject.title} />
               <div className="absolute top-0 left-0 p-8 pointer-events-none w-full bg-gradient-to-b from-black/80 to-transparent">
                  <h2 className="text-white font-bold text-3xl">{selectedProject.title}</h2>
                  <p className="text-[#10b981] text-lg font-medium">{selectedProject.studentName}</p>
